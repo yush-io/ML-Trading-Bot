@@ -93,17 +93,12 @@ Useful scripts:
 
 Goal: make the first experiment easier to understand visually.
 
-Status: in progress.
+Status: complete for the first version.
 
 Work included:
 - Plot model strategy equity curve versus buy-and-hold
 - Plot model strategy drawdown
 - Save local chart files in `reports/figures/`
-
-Next improvements:
-- Add a small metrics summary file, such as `reports/AAPL_metrics.csv`
-- Add a signal exposure chart showing when the model was invested versus flat
-- Add chart examples to the README after deciding whether generated report images should be tracked
 
 Useful script:
 - `run_report_aapl.py`
@@ -112,12 +107,21 @@ Useful script:
 
 Goal: improve the first baseline before expanding the project.
 
-Recommended next steps:
+Status: in progress.
+
+Work included:
 - Tune the trading threshold, such as testing `0.50`, `0.55`, `0.60`, and `0.65`
 - Save metrics for each threshold
-- Add a simple confusion matrix
+- Add a signal exposure chart showing when the model was invested versus flat
+- Add a simple confusion matrix plot
+
+Useful script:
+- `run_evaluate_aapl.py`
+
+Recommended next steps:
 - Consider a second baseline model, such as Random Forest or XGBoost
 - Save trained model artifacts only after the modeling approach stabilizes
+- Add chart examples to the README after deciding whether generated report images should be tracked
 
 Success criteria:
 - The model does not need to beat buy-and-hold yet
