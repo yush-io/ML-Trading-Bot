@@ -1,123 +1,183 @@
 # ML Trading Bot Roadmap
 
-This project is designed to be built in stages so the core research pipeline is solid before adding polish or deployment.
+This project is designed to grow in stages: first build a credible local research pipeline, then expand from one stock to a portfolio, then optionally add sentiment or cloud automation.
 
-## Phase 1: Setup and Data
+## Current Status
 
-### Day 1
-- Create the repo structure
-- Install dependencies
-- Pull historical market data from Yahoo Finance for the 5-stock basket
-- Save raw data locally
+The project currently has a working AAPL-only baseline pipeline.
 
-### Day 2
-- Inspect the data for missing values and gaps
+Completed:
+- Created the repo structure
+- Added project documentation and dependency list
+- Selected a 5-stock universe: `AAPL`, `NVDA`, `AMZN`, `MSFT`, `META`
+- Downloaded historical Yahoo Finance data
+- Saved raw data locally in `data/raw/`
+- Cleaned Yahoo CSV formatting issues
+- Standardized the date and market data columns
+- Created stationarity-aware features
+- Built a reproducible feature generation script
+- Trained an AAPL-only logistic regression baseline
+- Converted predictions into long/flat trading signals
+- Ran an AAPL backtest with transaction costs
+- Reported Sharpe Ratio, Sortino Ratio, Maximum Drawdown, and total return
+- Compared the model strategy against buy-and-hold
+- Added beginner-friendly comments across the Python files
+
+In progress:
+- AAPL visual reporting branch: `codex/aapl-visual-report`
+- Equity curve chart for model strategy versus buy-and-hold
+- Drawdown chart for the model strategy
+
+## Phase 1: Data Pipeline
+
+Goal: make the market data reliable and reproducible.
+
+Status: complete for the first version.
+
+Work included:
+- Pull historical market data from Yahoo Finance
+- Save one raw CSV per ticker
 - Verify all five tickers download successfully
-- Plot price and volume
-- Decide the first trading symbol and date range
+- Clean extra Yahoo metadata rows
+- Rename/standardize columns such as `Date`, `Open`, `High`, `Low`, `Close`, and `Volume`
+- Convert dates and market columns into proper data types
 
-### Day 3
-- Clean the data
-- Standardize column names
-- Create a reproducible data loading script
+Useful scripts:
+- `run_download.py`
+- `run_features.py`
+- `src/data_loader.py`
+- `src/feature_engineering.py`
 
 ## Phase 2: Features and Labels
 
-### Day 4
-- Build basic price-based features
-- Focus on stationarity-safe features
-- Use log returns, rolling z-scores, volatility, and normalized indicators
-- Avoid feeding raw prices directly into the model
+Goal: turn raw prices into model-ready data.
 
-### Day 5
-- Define the prediction target
-- Start with next-day direction or return bucket
-- Check for leakage and time alignment issues
+Status: complete for the first version.
 
-### Day 6
-- Create a train/validation split that respects time order
-- Build a baseline model
+Work included:
+- Avoid raw prices as direct model inputs
+- Use log returns, rolling volatility, volume changes, and rolling z-scores
+- Create `target_next_day_up`
+- Drop rows without enough rolling history
+- Save processed feature files in `data/processed/`
 
-## Phase 3: Model Training and Evaluation
+Current feature set:
+- `log_return_1d`
+- `log_return_5d`
+- `log_return_20d`
+- `volatility_20d`
+- `volume_log_change`
+- `close_zscore_20d`
+- `volume_zscore_20d`
 
-### Day 7
-- Train the first model
-- Compare against a naive baseline
+## Phase 3: AAPL Baseline Model
 
-### Day 8
-- Tune the model lightly
-- Evaluate precision, recall, and ROC-AUC as diagnostics
-- Add trading-focused evaluation with Sharpe Ratio, Sortino Ratio, and Maximum Drawdown
+Goal: validate the full ML-to-backtest workflow on one stock before scaling up.
 
-### Day 9
-- Document what worked and what did not
-- Save model outputs and metrics
+Status: complete for the first version.
 
-## Phase 4: Backtesting
+Work included:
+- Train on AAPL data before `2023-01-01`
+- Test on AAPL data from `2023-01-01` onward
+- Train a logistic regression classifier
+- Predict probability of next-day upward movement
+- Use a `0.55` probability threshold for long/flat signals
+- Save AAPL backtest output to `reports/AAPL_baseline_backtest.csv`
 
-### Day 10
-- Convert predictions into trading signals
-- Build a simple long/flat backtest
+Useful scripts:
+- `run_train_aapl.py`
+- `src/train.py`
+- `src/backtest.py`
 
-### Day 11
-- Add transaction costs
-- Add slippage assumptions
-- Generate equity curve and drawdown plots
-- Report Sharpe Ratio, Sortino Ratio, and Maximum Drawdown for the strategy
+## Phase 4: AAPL Reporting
 
-### Day 12
-- Compare strategy performance against buy-and-hold
-- Check whether the model adds value after costs
+Goal: make the first experiment easier to understand visually.
 
-## Phase 5: News and Sentiment
+Status: in progress.
 
-This phase is optional and should stay narrow. Historical article scraping with exact timestamps can become a major data-cleaning and leakage problem.
+Work included:
+- Plot model strategy equity curve versus buy-and-hold
+- Plot model strategy drawdown
+- Save local chart files in `reports/figures/`
 
-### Day 13
-- Choose one cleaner sentiment source
+Next improvements:
+- Add a small metrics summary file, such as `reports/AAPL_metrics.csv`
+- Add a signal exposure chart showing when the model was invested versus flat
+- Add chart examples to the README after deciding whether generated report images should be tracked
+
+Useful script:
+- `run_report_aapl.py`
+
+## Phase 5: Improve the AAPL Experiment
+
+Goal: improve the first baseline before expanding the project.
+
+Recommended next steps:
+- Tune the trading threshold, such as testing `0.50`, `0.55`, `0.60`, and `0.65`
+- Save metrics for each threshold
+- Add a simple confusion matrix
+- Consider a second baseline model, such as Random Forest or XGBoost
+- Save trained model artifacts only after the modeling approach stabilizes
+
+Success criteria:
+- The model does not need to beat buy-and-hold yet
+- The project should clearly explain tradeoffs between return, drawdown, and risk-adjusted performance
+
+## Phase 6: Expand to All Five Stocks
+
+Goal: move from AAPL-only testing to a broader stock universe.
+
+Planned work:
+- Run the same feature/model/backtest flow for all five tickers
+- Report metrics per ticker
+- Compare each ticker strategy against its own buy-and-hold benchmark
+- Build an equal-weight portfolio backtest
+- Evaluate portfolio-level Sharpe Ratio, Sortino Ratio, Maximum Drawdown, and total return
+
+Important:
+- Keep per-ticker results visible so one strong or weak stock does not hide the real behavior
+- Use time-based splits, not random shuffling
+
+## Optional Phase 7: News and Sentiment
+
+Goal: test whether sentiment improves risk-adjusted returns.
+
+This phase should stay narrow. Historical article scraping with exact timestamps can become a major data-cleaning and leakage problem.
+
+Recommended approach:
 - Prefer a curated dataset or precomputed sentiment source over raw scraping
-
-### Day 14
-- Build a sentiment scoring step
-- Aggregate sentiment by day
-
-### Day 15
 - Compare price-only versus price-plus-sentiment models
-- Check whether sentiment improves risk-adjusted returns
+- Only keep sentiment if it improves the research story or the metrics
 
-## Phase 6: Polish and Presentation
+## Phase 8: Dashboard and Presentation
 
-### Day 16
-- Build a simple dashboard
-- Show predictions, equity curve, and trade history
+Goal: make the project easy to demo and discuss.
 
-### Day 17
-- Clean up the code
-- Add configuration and comments where helpful
+Planned work:
+- Build a simple Streamlit dashboard
+- Show equity curves, drawdowns, signals, and per-ticker metrics
+- Improve the README with screenshots and a clear project story
+- Add resume bullets and interview talking points
 
-### Day 18
-- Write a strong README
-- Add screenshots or charts to the repo
+## Optional Phase 9: Cloud Automation
 
-### Day 19
-- Prepare resume bullets
-- Write interview talking points
+Goal: run daily inference automatically after the local project is solid.
 
-## Optional Phase 7: Cloud
+Planned work:
+- Save/load a trained model
+- Add a daily signal script
+- Use GitHub Actions or a lightweight cloud scheduler
+- Fetch the latest market data after market close
+- Generate daily signals and save them to a log
 
-### Day 20
-- Decide whether deployment is worth it
-- If yes, host the dashboard or a small API
-
-### Day 21
-- Add a scheduled job for daily updates
-- Keep the cloud version lightweight and cheap
+Important:
+- Do not add cloud automation before the local backtest and reporting pipeline are credible
+- Daily inference is enough; the system does not need to run 24/7
 
 ## Notes
 
 - Build locally first.
-- Do not optimize for live trading before the backtest is credible.
-- A simple but well-tested project is more impressive than a flashy one that is not methodologically sound.
+- Commit at meaningful milestones, not every tiny change.
 - In trading, accuracy is not the main goal; risk-adjusted returns matter more.
 - Use features that are robust to non-stationarity, such as returns and normalized indicators.
-- Start with equal treatment across `AAPL`, `NVDA`, `AMZN`, `MSFT`, and `META` before adding any fancy weighting scheme.
+- A simple but well-tested project is more impressive than a flashy one that is not methodologically sound.

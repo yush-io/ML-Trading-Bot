@@ -56,3 +56,5 @@ This will download one CSV per symbol in the basket.
 Then run `python run_features.py` to create model-ready feature files in `data/processed/`.
 
 Run `python run_train_aapl.py` to train the first AAPL-only baseline model and save a backtest report in `reports/`.
+
+Run `python run_report_aapl.py` to generate AAPL equity curve and drawdown plots in `reports/figures/`.
