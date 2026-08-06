@@ -58,3 +58,5 @@ Then run `python run_features.py` to create model-ready feature files in `data/p
 Run `python run_train_aapl.py` to train the first AAPL-only baseline model and save a backtest report in `reports/`.
 
 Run `python run_report_aapl.py` to generate AAPL equity curve and drawdown plots in `reports/figures/`.
+
+Run `python run_evaluate_aapl.py` to compare signal thresholds and generate signal exposure/confusion matrix plots.
