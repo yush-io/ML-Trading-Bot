@@ -1,0 +1,11 @@
+pandas
+numpy
+scikit-learn
+yfinance
+matplotlib
+seaborn
+streamlit
+xgboost
+python-dotenv
+requests
+
