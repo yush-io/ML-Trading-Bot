@@ -67,4 +67,4 @@ Run `python -m scripts.run_walk_forward_aapl` to validate the AAPL candidate wit
 
 Run `python -m scripts.run_walk_forward_universe` to apply the optimized shared universe setup to all five stocks and compare the equal-weight model portfolio against always-long.
 
-Run `python -m scripts.run_optimize_universe` to compare shared model, feature, and threshold setups across the full five-stock portfolio.
+Run `python -m scripts.run_optimize_universe` to compare shared model, feature, threshold, selection-mode, per-ticker-threshold, and inverse-volatility weighting setups across the full five-stock portfolio.

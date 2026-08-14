@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
@@ -13,6 +14,8 @@ from src.train import classification_metrics, train_baseline_model
 
 SIGNAL_THRESHOLDS = (0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70)
 MIN_MEANINGFUL_EXPOSURE = 0.10
+MAX_MEANINGFUL_EXPOSURE = 0.95
+MAX_DRAWDOWN_LIMIT = -0.25
 
 TRAIN_START_DATE = "2018-01-01"
 WALK_FORWARD_FOLDS = (
@@ -256,13 +259,148 @@ def summarize_portfolio(daily_returns: pd.DataFrame, symbol_summary: pd.DataFram
     )
 
 
-def write_summary(portfolio_summary: pd.DataFrame, symbol_summary: pd.DataFrame, output_path: Path) -> None:
-    """Write a readable optimization summary."""
+def summarize_inverse_volatility_portfolio(daily_returns: pd.DataFrame, symbol_summary: pd.DataFrame) -> pd.DataFrame:
+    """Rank configurations using inverse-volatility symbol weights."""
 
-    model_configs = portfolio_summary[
+    rows = []
+    exposure = symbol_summary.groupby("config_id")["avg_exposure"].mean()
+
+    for config_id, config_returns in daily_returns.groupby("config_id"):
+        pivot_returns = config_returns.pivot_table(index="Date", columns="symbol", values="net_strategy_return")
+        inverse_volatility = 1 / pivot_returns.std().replace(0, np.nan)
+        weights = inverse_volatility / inverse_volatility.sum()
+        portfolio_returns = pivot_returns.mul(weights, axis=1).sum(axis=1).astype(float).sort_index()
+        first_row = config_returns.iloc[0]
+        metrics = risk_metrics(portfolio_returns)
+
+        rows.append(
+            {
+                "config_id": config_id,
+                "strategy": first_row["strategy"],
+                "symbols": config_returns["symbol"].nunique(),
+                "avg_exposure": exposure.loc[config_id],
+                "weighting": "inverse_volatility",
+                "start": portfolio_returns.index.min(),
+                "end": portfolio_returns.index.max(),
+                **metrics,
+            }
+        )
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["sharpe_ratio", "total_return"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def eligible_model_configs(portfolio_summary: pd.DataFrame) -> pd.DataFrame:
+    """Filter out always-long and configurations with extreme exposure."""
+
+    return portfolio_summary[
         (portfolio_summary["strategy"] == "model")
         & (portfolio_summary["avg_exposure"] >= MIN_MEANINGFUL_EXPOSURE)
+        & (portfolio_summary["avg_exposure"] <= MAX_MEANINGFUL_EXPOSURE)
     ].copy()
+
+
+def select_shared_strategy_modes(portfolio_summary: pd.DataFrame) -> pd.DataFrame:
+    """Pick representative shared configurations for different risk preferences."""
+
+    model_configs = eligible_model_configs(portfolio_summary)
+    if model_configs.empty:
+        model_configs = portfolio_summary[portfolio_summary["strategy"] == "model"].copy()
+
+    selections = []
+
+    best_sharpe = model_configs.sort_values(["sharpe_ratio", "total_return"], ascending=False).iloc[0]
+    selections.append(("best_sharpe", best_sharpe))
+
+    best_return = model_configs.sort_values(["total_return", "sharpe_ratio"], ascending=False).iloc[0]
+    selections.append(("best_return", best_return))
+
+    drawdown_limited = model_configs[model_configs["max_drawdown"] >= MAX_DRAWDOWN_LIMIT].copy()
+    if not drawdown_limited.empty:
+        best_return_with_drawdown_limit = drawdown_limited.sort_values(["total_return", "sharpe_ratio"], ascending=False).iloc[0]
+        selections.append(("best_return_with_drawdown_limit", best_return_with_drawdown_limit))
+
+    rows = []
+    for selection_mode, row in selections:
+        out = row.to_dict()
+        out["selection_mode"] = selection_mode
+        out["min_exposure_filter"] = MIN_MEANINGFUL_EXPOSURE
+        out["max_exposure_filter"] = MAX_MEANINGFUL_EXPOSURE
+        out["max_drawdown_limit"] = MAX_DRAWDOWN_LIMIT if selection_mode == "best_return_with_drawdown_limit" else pd.NA
+        rows.append(out)
+
+    return pd.DataFrame(rows)
+
+
+def summarize_per_ticker_thresholds(daily_returns: pd.DataFrame, symbol_summary: pd.DataFrame) -> pd.DataFrame:
+    """Allow each symbol to use its own threshold for the same model/feature set."""
+
+    model_rows = symbol_summary[
+        (symbol_summary["strategy"] == "model")
+        & (symbol_summary["avg_exposure"] >= MIN_MEANINGFUL_EXPOSURE)
+        & (symbol_summary["avg_exposure"] <= MAX_MEANINGFUL_EXPOSURE)
+    ].copy()
+
+    rows = []
+    for (model_name, feature_set_name), group in model_rows.groupby(["model", "feature_set"]):
+        selected_by_symbol = (
+            group.sort_values(["symbol", "avg_sharpe_ratio", "avg_total_return"], ascending=[True, False, False])
+            .groupby("symbol", as_index=False)
+            .head(1)
+        )
+
+        selected_returns = []
+        for _, selected in selected_by_symbol.iterrows():
+            mask = (daily_returns["symbol"] == selected["symbol"]) & (daily_returns["config_id"] == selected["config_id"])
+            selected_returns.append(daily_returns.loc[mask])
+
+        if not selected_returns:
+            continue
+
+        combined_returns = pd.concat(selected_returns, ignore_index=True)
+        portfolio_returns = combined_returns.groupby("Date")["net_strategy_return"].mean().sort_index()
+        metrics = risk_metrics(portfolio_returns)
+        threshold_summary = "; ".join(
+            f"{row['symbol']}={row['threshold']:.2f}" for _, row in selected_by_symbol.sort_values("symbol").iterrows()
+        )
+
+        rows.append(
+            {
+                "selection_mode": "per_ticker_thresholds",
+                "config_id": f"per_ticker_thresholds|{model_name}|{feature_set_name}",
+                "strategy": "model",
+                "model": model_name,
+                "feature_set": feature_set_name,
+                "thresholds": threshold_summary,
+                "symbols": selected_by_symbol["symbol"].nunique(),
+                "avg_exposure": selected_by_symbol["avg_exposure"].mean(),
+                "start": portfolio_returns.index.min(),
+                "end": portfolio_returns.index.max(),
+                **metrics,
+            }
+        )
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["sharpe_ratio", "total_return"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def write_summary(
+    portfolio_summary: pd.DataFrame,
+    symbol_summary: pd.DataFrame,
+    strategy_selections: pd.DataFrame,
+    per_ticker_threshold_summary: pd.DataFrame,
+    inverse_volatility_summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Write a readable optimization summary."""
+
+    model_configs = eligible_model_configs(portfolio_summary)
     if model_configs.empty:
         model_configs = portfolio_summary[portfolio_summary["strategy"] == "model"].copy()
 
@@ -282,6 +420,18 @@ def write_summary(portfolio_summary: pd.DataFrame, symbol_summary: pd.DataFrame,
         f"drawdown `{row['max_drawdown']:.2%}`, exposure `{row['avg_exposure']:.2%}`."
         for _, row in model_configs.head(5).iterrows()
     )
+    selection_lines = "\n".join(
+        f"- `{row['selection_mode']}`: `{row['config_id']}` with Sharpe `{row['sharpe_ratio']:.4f}`, "
+        f"return `{row['total_return']:.2%}`, drawdown `{row['max_drawdown']:.2%}`, exposure `{row['avg_exposure']:.2%}`."
+        for _, row in strategy_selections.iterrows()
+    )
+
+    best_per_ticker = per_ticker_threshold_summary.iloc[0]
+    best_inverse_volatility = inverse_volatility_summary[
+        (inverse_volatility_summary["strategy"] == "model")
+        & (inverse_volatility_summary["avg_exposure"] >= MIN_MEANINGFUL_EXPOSURE)
+        & (inverse_volatility_summary["avg_exposure"] <= MAX_MEANINGFUL_EXPOSURE)
+    ].iloc[0]
 
     report = f"""# Universe Optimization Summary
 
@@ -304,6 +454,29 @@ def write_summary(portfolio_summary: pd.DataFrame, symbol_summary: pd.DataFrame,
 ## Top Shared Configurations
 
 {top_lines}
+
+## Strategy Selection Modes
+
+These selections use exposure between {MIN_MEANINGFUL_EXPOSURE:.0%} and {MAX_MEANINGFUL_EXPOSURE:.0%}.
+
+{selection_lines}
+
+## Per-Ticker Threshold Candidate
+
+- Config: `{best_per_ticker["config_id"]}`
+- Thresholds: `{best_per_ticker["thresholds"]}`
+- Portfolio Sharpe: `{best_per_ticker["sharpe_ratio"]:.4f}`
+- Portfolio total return: `{best_per_ticker["total_return"]:.2%}`
+- Portfolio max drawdown: `{best_per_ticker["max_drawdown"]:.2%}`
+- Average exposure: `{best_per_ticker["avg_exposure"]:.2%}`
+
+## Inverse-Volatility Weighting Candidate
+
+- Config: `{best_inverse_volatility["config_id"]}`
+- Portfolio Sharpe: `{best_inverse_volatility["sharpe_ratio"]:.4f}`
+- Portfolio total return: `{best_inverse_volatility["total_return"]:.2%}`
+- Portfolio max drawdown: `{best_inverse_volatility["max_drawdown"]:.2%}`
+- Average exposure: `{best_inverse_volatility["avg_exposure"]:.2%}`
 
 ## Best Configuration By Symbol
 
@@ -366,26 +539,47 @@ def main() -> None:
     daily_returns = pd.concat(daily_return_frames, ignore_index=True)
     symbol_summary = summarize_symbol_results(results)
     portfolio_summary = summarize_portfolio(daily_returns, symbol_summary)
+    strategy_selections = select_shared_strategy_modes(portfolio_summary)
+    per_ticker_threshold_summary = summarize_per_ticker_thresholds(daily_returns, symbol_summary)
+    inverse_volatility_summary = summarize_inverse_volatility_portfolio(daily_returns, symbol_summary)
 
     results_path = reports_dir / "optimization_fold_results.csv"
     symbol_summary_path = reports_dir / "optimization_symbol_summary.csv"
     portfolio_summary_path = reports_dir / "optimization_portfolio_summary.csv"
     daily_returns_path = reports_dir / "optimization_daily_returns.csv"
+    strategy_selections_path = reports_dir / "optimization_strategy_selections.csv"
+    per_ticker_threshold_path = reports_dir / "optimization_per_ticker_threshold_summary.csv"
+    inverse_volatility_path = reports_dir / "optimization_inverse_volatility_summary.csv"
     markdown_summary_path = reports_dir / "optimization_summary.md"
 
     results.to_csv(results_path, index=False)
     symbol_summary.to_csv(symbol_summary_path, index=False)
     portfolio_summary.to_csv(portfolio_summary_path, index=False)
     daily_returns.to_csv(daily_returns_path, index=False)
-    write_summary(portfolio_summary, symbol_summary, markdown_summary_path)
+    strategy_selections.to_csv(strategy_selections_path, index=False)
+    per_ticker_threshold_summary.to_csv(per_ticker_threshold_path, index=False)
+    inverse_volatility_summary.to_csv(inverse_volatility_path, index=False)
+    write_summary(
+        portfolio_summary,
+        symbol_summary,
+        strategy_selections,
+        per_ticker_threshold_summary,
+        inverse_volatility_summary,
+        markdown_summary_path,
+    )
 
     print(f"Saved fold results to {results_path}")
     print(f"Saved symbol summary to {symbol_summary_path}")
     print(f"Saved portfolio summary to {portfolio_summary_path}")
     print(f"Saved daily returns to {daily_returns_path}")
+    print(f"Saved strategy selections to {strategy_selections_path}")
+    print(f"Saved per-ticker threshold summary to {per_ticker_threshold_path}")
+    print(f"Saved inverse-volatility summary to {inverse_volatility_path}")
     print(f"Saved markdown summary to {markdown_summary_path}")
     print("\nTop portfolio configurations")
     print(portfolio_summary.head(10))
+    print("\nStrategy selections")
+    print(strategy_selections)
 
 
 if __name__ == "__main__":

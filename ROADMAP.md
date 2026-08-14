@@ -30,6 +30,7 @@ In progress:
 - Per-ticker model versus always-long comparison
 - Equal-weight portfolio backtest
 - Universe-level model, feature, and threshold optimization
+- Strategy selection modes for return, risk, exposure, and drawdown tradeoffs
 
 ## Phase 1: Data Pipeline
 
@@ -146,6 +147,8 @@ Planned work:
 - Build an equal-weight portfolio backtest
 - Evaluate portfolio-level Sharpe Ratio, Sortino Ratio, Maximum Drawdown, and total return
 - Compare shared model, feature, and threshold configurations across the full universe
+- Compare best Sharpe, best return, and drawdown-limited return selection modes
+- Test per-ticker thresholds and inverse-volatility portfolio weighting
 
 Useful script:
 - `scripts/run_walk_forward_universe.py`

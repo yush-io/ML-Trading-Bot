@@ -12,17 +12,15 @@ from src.train import classification_metrics
 
 
 SELECTED_MODEL_NAME = "random_forest"
-SELECTED_FEATURE_SET_NAME = "all_features"
-SELECTED_FEATURES = [
-    "log_return_1d",
-    "log_return_5d",
-    "log_return_20d",
-    "volatility_20d",
-    "volume_log_change",
-    "close_zscore_20d",
-    "volume_zscore_20d",
-]
-SIGNAL_THRESHOLD = 0.60
+SELECTED_FEATURE_SET_NAME = "returns_only"
+SELECTED_FEATURES = ["log_return_1d", "log_return_5d", "log_return_20d"]
+SIGNAL_THRESHOLDS_BY_SYMBOL = {
+    "AAPL": 0.45,
+    "AMZN": 0.55,
+    "META": 0.60,
+    "MSFT": 0.40,
+    "NVDA": 0.45,
+}
 
 TRAIN_START_DATE = "2018-01-01"
 WALK_FORWARD_FOLDS = (
@@ -67,7 +65,8 @@ def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, tes
 
     fitted_model = fit_model(model, train_data)
     probabilities = fitted_model.predict_proba(test_data[SELECTED_FEATURES])[:, 1]
-    predicted_labels = (probabilities >= SIGNAL_THRESHOLD).astype(int)
+    signal_threshold = SIGNAL_THRESHOLDS_BY_SYMBOL[symbol]
+    predicted_labels = (probabilities >= signal_threshold).astype(int)
 
     strategy_data = test_data.copy()
     strategy_data["predicted_probability"] = probabilities
@@ -83,7 +82,7 @@ def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, tes
         "strategy": "model",
         "model": SELECTED_MODEL_NAME,
         "feature_set": SELECTED_FEATURE_SET_NAME,
-        "threshold": SIGNAL_THRESHOLD,
+        "threshold": signal_threshold,
         "train_start": train_data["Date"].min(),
         "train_end": train_data["Date"].max(),
         "test_start": test_data["Date"].min(),
@@ -211,7 +210,7 @@ Selected setup:
 
 - Model: `{SELECTED_MODEL_NAME}`
 - Feature set: `{SELECTED_FEATURE_SET_NAME}`
-- Threshold: `{SIGNAL_THRESHOLD:.2f}`
+- Thresholds: `{", ".join(f"{symbol}={threshold:.2f}" for symbol, threshold in SIGNAL_THRESHOLDS_BY_SYMBOL.items())}`
 
 ## Equal-Weight Portfolio
 
@@ -230,7 +229,7 @@ Selected setup:
 
 ## Interpretation
 
-This applies the optimized shared strategy to the full five-stock universe.
+This applies the optimized per-ticker threshold strategy to the full five-stock universe.
 Use the optimization report to compare this benchmark against other model, feature, and threshold choices.
 """
 
