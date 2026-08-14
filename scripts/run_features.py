@@ -25,7 +25,7 @@ def main() -> None:
 
         # Give a clear error if someone skipped the download step.
         if not raw_path.exists():
-            raise FileNotFoundError(f"Missing raw data file: {raw_path}. Run python run_download.py first.")
+            raise FileNotFoundError(f"Missing raw data file: {raw_path}. Run python -m scripts.run_download first.")
 
         # Load raw prices, create features/labels, and save the processed dataset.
         raw_data = load_raw_price_data(str(raw_path))
@@ -40,6 +40,6 @@ def main() -> None:
         )
 
 
-# This lets the file run as a script with: python run_features.py
+# This lets the file run as a module with: python -m scripts.run_features
 if __name__ == "__main__":
     main()

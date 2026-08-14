@@ -45,7 +45,7 @@ def load_data() -> pd.DataFrame:
 
     features_path = Path("data/processed") / f"{SYMBOL}_features.csv"
     if not features_path.exists():
-        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python run_features.py first.")
+        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python -m scripts.run_features first.")
 
     return pd.read_csv(features_path, parse_dates=["Date"])
 
@@ -270,7 +270,7 @@ The always-long baseline matters because high-exposure strategies can look stron
 def main() -> None:
     """Run walk-forward model comparison for AAPL."""
 
-    reports_dir = Path("reports")
+    reports_dir = Path("reports/aapl")
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     data = load_data()

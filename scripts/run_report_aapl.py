@@ -41,12 +41,12 @@ def save_drawdown_plot(backtest: pd.DataFrame, output_path: Path) -> None:
 def main() -> None:
     """Create visual reports from the AAPL baseline backtest output."""
 
-    backtest_path = Path("reports") / f"{SYMBOL}_baseline_backtest.csv"
-    figures_dir = Path("reports/figures")
+    backtest_path = Path("reports/aapl") / f"{SYMBOL}_baseline_backtest.csv"
+    figures_dir = Path("reports/aapl/figures")
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     if not backtest_path.exists():
-        raise FileNotFoundError(f"Missing backtest file: {backtest_path}. Run python run_train_aapl.py first.")
+        raise FileNotFoundError(f"Missing backtest file: {backtest_path}. Run python -m scripts.run_train_aapl first.")
 
     backtest = pd.read_csv(backtest_path, parse_dates=["Date"])
 
@@ -60,6 +60,6 @@ def main() -> None:
     print(f"Saved drawdown plot to {drawdown_path}")
 
 
-# This lets the file run as a script with: python run_report_aapl.py
+# This lets the file run as a module with: python -m scripts.run_report_aapl
 if __name__ == "__main__":
     main()

@@ -30,7 +30,7 @@ def load_train_test_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     features_path = Path("data/processed") / f"{SYMBOL}_features.csv"
     if not features_path.exists():
-        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python run_features.py first.")
+        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python -m scripts.run_features first.")
 
     data = pd.read_csv(features_path, parse_dates=["Date"])
     train_data = data[data["Date"] < TRAIN_END_DATE].copy()
@@ -147,7 +147,7 @@ Be careful with thresholds that barely trade. A low drawdown is not very meaning
 def main() -> None:
     """Run AAPL model evaluation beyond the first fixed-threshold backtest."""
 
-    reports_dir = Path("reports")
+    reports_dir = Path("reports/aapl")
     figures_dir = reports_dir / "figures"
     reports_dir.mkdir(parents=True, exist_ok=True)
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +188,6 @@ def main() -> None:
     print(threshold_metrics[["threshold", "exposure", "trade_count", "sharpe_ratio", "max_drawdown", "total_return"]])
 
 
-# This lets the file run as a script with: python run_evaluate_aapl.py
+# This lets the file run as a module with: python -m scripts.run_evaluate_aapl
 if __name__ == "__main__":
     main()
