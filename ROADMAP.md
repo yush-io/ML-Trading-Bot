@@ -29,6 +29,7 @@ In progress:
 - Full five-stock universe walk-forward validation
 - Per-ticker model versus always-long comparison
 - Equal-weight portfolio backtest
+- Universe-level model, feature, and threshold optimization
 
 ## Phase 1: Data Pipeline
 
@@ -45,8 +46,8 @@ Work included:
 - Convert dates and market columns into proper data types
 
 Useful scripts:
-- `run_download.py`
-- `run_features.py`
+- `scripts/run_download.py`
+- `scripts/run_features.py`
 - `src/data_loader.py`
 - `src/feature_engineering.py`
 
@@ -84,10 +85,10 @@ Work included:
 - Train a logistic regression classifier
 - Predict probability of next-day upward movement
 - Use a `0.55` probability threshold for long/flat signals
-- Save AAPL backtest output to `reports/AAPL_baseline_backtest.csv`
+- Save AAPL backtest output to `reports/aapl/AAPL_baseline_backtest.csv`
 
 Useful scripts:
-- `run_train_aapl.py`
+- `scripts/run_train_aapl.py`
 - `src/train.py`
 - `src/backtest.py`
 
@@ -100,10 +101,10 @@ Status: complete for the first version.
 Work included:
 - Plot model strategy equity curve versus buy-and-hold
 - Plot model strategy drawdown
-- Save local chart files in `reports/figures/`
+- Save local chart files in `reports/aapl/figures/`
 
 Useful script:
-- `run_report_aapl.py`
+- `scripts/run_report_aapl.py`
 
 ## Phase 5: Improve the AAPL Experiment
 
@@ -122,9 +123,9 @@ Work included:
 - Compare against an always-long baseline
 
 Useful script:
-- `run_evaluate_aapl.py`
-- `run_compare_aapl_models.py`
-- `run_walk_forward_aapl.py`
+- `scripts/run_evaluate_aapl.py`
+- `scripts/run_compare_aapl_models.py`
+- `scripts/run_walk_forward_aapl.py`
 
 Recommended next steps:
 - Save trained model artifacts only after the modeling approach stabilizes
@@ -139,14 +140,16 @@ Success criteria:
 Goal: move from AAPL-only testing to a broader stock universe.
 
 Planned work:
-- Run the selected AAPL candidate on all five tickers
+- Run the optimized shared universe setup on all five tickers
 - Report metrics per ticker
 - Compare each ticker strategy against its own always-long benchmark
 - Build an equal-weight portfolio backtest
 - Evaluate portfolio-level Sharpe Ratio, Sortino Ratio, Maximum Drawdown, and total return
+- Compare shared model, feature, and threshold configurations across the full universe
 
 Useful script:
-- `run_walk_forward_universe.py`
+- `scripts/run_walk_forward_universe.py`
+- `scripts/run_optimize_universe.py`
 
 Important:
 - Keep per-ticker results visible so one strong or weak stock does not hide the real behavior

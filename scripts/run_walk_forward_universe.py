@@ -12,9 +12,17 @@ from src.train import classification_metrics
 
 
 SELECTED_MODEL_NAME = "random_forest"
-SELECTED_FEATURE_SET_NAME = "returns_plus_volatility"
-SELECTED_FEATURES = ["log_return_1d", "log_return_5d", "log_return_20d", "volatility_20d"]
-SIGNAL_THRESHOLD = 0.45
+SELECTED_FEATURE_SET_NAME = "all_features"
+SELECTED_FEATURES = [
+    "log_return_1d",
+    "log_return_5d",
+    "log_return_20d",
+    "volatility_20d",
+    "volume_log_change",
+    "close_zscore_20d",
+    "volume_zscore_20d",
+]
+SIGNAL_THRESHOLD = 0.60
 
 TRAIN_START_DATE = "2018-01-01"
 WALK_FORWARD_FOLDS = (
@@ -30,13 +38,13 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
 
     features_path = Path("data/processed") / f"{symbol}_features.csv"
     if not features_path.exists():
-        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python run_features.py first.")
+        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python -m scripts.run_features first.")
 
     return pd.read_csv(features_path, parse_dates=["Date"])
 
 
 def build_selected_model() -> RandomForestClassifier:
-    """Return the selected AAPL candidate model."""
+    """Return the optimized shared universe model."""
 
     return RandomForestClassifier(
         n_estimators=300,
@@ -222,8 +230,8 @@ Selected setup:
 
 ## Interpretation
 
-This applies the AAPL-selected strategy to the full five-stock universe without retuning per ticker.
-That makes this a generalization test rather than another optimization pass.
+This applies the optimized shared strategy to the full five-stock universe.
+Use the optimization report to compare this benchmark against other model, feature, and threshold choices.
 """
 
     output_path.write_text(report)
@@ -233,7 +241,7 @@ def main() -> None:
     """Run the selected model setup across the configured stock universe."""
 
     config = ProjectConfig()
-    reports_dir = Path("reports")
+    reports_dir = Path("reports/universe")
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     model_template = build_selected_model()

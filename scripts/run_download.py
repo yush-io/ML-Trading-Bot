@@ -22,6 +22,6 @@ def main() -> None:
         print(f"Saved {len(data)} rows to {output_path}")
 
 
-# This lets the file run as a script with: python run_download.py
+# This lets the file run as a module with: python -m scripts.run_download
 if __name__ == "__main__":
     main()

@@ -27,7 +27,7 @@ def load_train_test_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     features_path = Path("data/processed") / f"{SYMBOL}_features.csv"
     if not features_path.exists():
-        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python run_features.py first.")
+        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python -m scripts.run_features first.")
 
     data = pd.read_csv(features_path, parse_dates=["Date"])
     train_data = data[data["Date"] < TRAIN_END_DATE].copy()
@@ -154,7 +154,7 @@ This comparison is still AAPL-only. A setup that works best on AAPL may not gene
 def main() -> None:
     """Compare several model types on the AAPL prediction/backtest task."""
 
-    reports_dir = Path("reports")
+    reports_dir = Path("reports/aapl")
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     train_data, test_data = load_train_test_data()
@@ -199,6 +199,6 @@ def main() -> None:
     )
 
 
-# This lets the file run as a script with: python run_compare_aapl_models.py
+# This lets the file run as a module with: python -m scripts.run_compare_aapl_models
 if __name__ == "__main__":
     main()

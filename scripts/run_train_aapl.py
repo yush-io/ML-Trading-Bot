@@ -24,12 +24,12 @@ def main() -> None:
     features_path = Path("data/processed") / f"{SYMBOL}_features.csv"
 
     # Reports are saved here so results do not mix with source data.
-    reports_dir = Path("reports")
+    reports_dir = Path("reports/aapl")
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     # Give a clear error if someone skipped the feature-building step.
     if not features_path.exists():
-        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python run_features.py first.")
+        raise FileNotFoundError(f"Missing feature file: {features_path}. Run python -m scripts.run_features first.")
 
     # Read the processed data and parse Date as an actual datetime column.
     df = pd.read_csv(features_path, parse_dates=["Date"])
@@ -96,6 +96,6 @@ def main() -> None:
     print(f"\nSaved backtest results to {output_path}")
 
 
-# This lets the file run as a script with: python run_train_aapl.py
+# This lets the file run as a module with: python -m scripts.run_train_aapl
 if __name__ == "__main__":
     main()

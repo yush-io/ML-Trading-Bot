@@ -49,20 +49,22 @@ The first version will:
 
 ## First step
 
-Run `python run_download.py` to fetch historical Yahoo Finance data and save it to `data/raw/`.
+Run `python -m scripts.run_download` to fetch historical Yahoo Finance data and save it to `data/raw/`.
 
 This will download one CSV per symbol in the basket.
 
-Then run `python run_features.py` to create model-ready feature files in `data/processed/`.
+Then run `python -m scripts.run_features` to create model-ready feature files in `data/processed/`.
 
-Run `python run_train_aapl.py` to train the first AAPL-only baseline model and save a backtest report in `reports/`.
+Run `python -m scripts.run_train_aapl` to train the first AAPL-only baseline model and save a backtest report in `reports/aapl/`.
 
-Run `python run_report_aapl.py` to generate AAPL equity curve and drawdown plots in `reports/figures/`.
+Run `python -m scripts.run_report_aapl` to generate AAPL equity curve and drawdown plots in `reports/aapl/figures/`.
 
-Run `python run_evaluate_aapl.py` to compare signal thresholds and generate signal exposure/confusion matrix plots.
+Run `python -m scripts.run_evaluate_aapl` to compare signal thresholds and generate signal exposure/confusion matrix plots.
 
-Run `python run_compare_aapl_models.py` to compare Logistic Regression, Random Forest, Gradient Boosting, and XGBoost when the local environment supports it.
+Run `python -m scripts.run_compare_aapl_models` to compare Logistic Regression, Random Forest, Gradient Boosting, and XGBoost when the local environment supports it.
 
-Run `python run_walk_forward_aapl.py` to validate the AAPL candidate with walk-forward folds, an always-long baseline, and feature subset checks.
+Run `python -m scripts.run_walk_forward_aapl` to validate the AAPL candidate with walk-forward folds, an always-long baseline, and feature subset checks.
 
-Run `python run_walk_forward_universe.py` to apply the selected AAPL candidate to all five stocks and compare the equal-weight model portfolio against always-long.
+Run `python -m scripts.run_walk_forward_universe` to apply the optimized shared universe setup to all five stocks and compare the equal-weight model portfolio against always-long.
+
+Run `python -m scripts.run_optimize_universe` to compare shared model, feature, and threshold setups across the full five-stock portfolio.
