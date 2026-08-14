@@ -4,7 +4,7 @@ This project is designed to grow in stages: first build a credible local researc
 
 ## Current Status
 
-The project currently has a working AAPL-only baseline pipeline.
+The project currently has a working AAPL validation pipeline and is expanding the selected setup to the full five-stock universe.
 
 Completed:
 - Created the repo structure
@@ -21,12 +21,14 @@ Completed:
 - Ran an AAPL backtest with transaction costs
 - Reported Sharpe Ratio, Sortino Ratio, Maximum Drawdown, and total return
 - Compared the model strategy against buy-and-hold
+- Added AAPL model comparison across Logistic Regression, Random Forest, Gradient Boosting, and XGBoost when available
+- Added AAPL walk-forward validation with an always-long baseline and feature subset comparison
 - Added beginner-friendly comments across the Python files
 
 In progress:
-- AAPL visual reporting branch: `codex/aapl-visual-report`
-- Equity curve chart for model strategy versus buy-and-hold
-- Drawdown chart for the model strategy
+- Full five-stock universe walk-forward validation
+- Per-ticker model versus always-long comparison
+- Equal-weight portfolio backtest
 
 ## Phase 1: Data Pipeline
 
@@ -107,19 +109,24 @@ Useful script:
 
 Goal: improve the first baseline before expanding the project.
 
-Status: in progress.
+Status: complete for the first model-selection pass.
 
 Work included:
 - Tune the trading threshold, such as testing `0.50`, `0.55`, `0.60`, and `0.65`
 - Save metrics for each threshold
 - Add a signal exposure chart showing when the model was invested versus flat
 - Add a simple confusion matrix plot
+- Compare model types across a wider threshold sweep
+- Validate the selected model with walk-forward folds
+- Compare feature subsets to avoid carrying noisy inputs forward
+- Compare against an always-long baseline
 
 Useful script:
 - `run_evaluate_aapl.py`
+- `run_compare_aapl_models.py`
+- `run_walk_forward_aapl.py`
 
 Recommended next steps:
-- Compare Logistic Regression, Random Forest, Gradient Boosting, and XGBoost when the local environment supports it
 - Save trained model artifacts only after the modeling approach stabilizes
 - Add chart examples to the README after deciding whether generated report images should be tracked
 
@@ -132,11 +139,14 @@ Success criteria:
 Goal: move from AAPL-only testing to a broader stock universe.
 
 Planned work:
-- Run the same feature/model/backtest flow for all five tickers
+- Run the selected AAPL candidate on all five tickers
 - Report metrics per ticker
-- Compare each ticker strategy against its own buy-and-hold benchmark
+- Compare each ticker strategy against its own always-long benchmark
 - Build an equal-weight portfolio backtest
 - Evaluate portfolio-level Sharpe Ratio, Sortino Ratio, Maximum Drawdown, and total return
+
+Useful script:
+- `run_walk_forward_universe.py`
 
 Important:
 - Keep per-ticker results visible so one strong or weak stock does not hide the real behavior

@@ -62,3 +62,7 @@ Run `python run_report_aapl.py` to generate AAPL equity curve and drawdown plots
 Run `python run_evaluate_aapl.py` to compare signal thresholds and generate signal exposure/confusion matrix plots.
 
 Run `python run_compare_aapl_models.py` to compare Logistic Regression, Random Forest, Gradient Boosting, and XGBoost when the local environment supports it.
+
+Run `python run_walk_forward_aapl.py` to validate the AAPL candidate with walk-forward folds, an always-long baseline, and feature subset checks.
+
+Run `python run_walk_forward_universe.py` to apply the selected AAPL candidate to all five stocks and compare the equal-weight model portfolio against always-long.
