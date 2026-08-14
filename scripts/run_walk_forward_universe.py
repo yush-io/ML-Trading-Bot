@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import RandomForestClassifier
@@ -14,6 +15,16 @@ from src.train import classification_metrics
 SELECTED_MODEL_NAME = "random_forest"
 SELECTED_FEATURE_SET_NAME = "returns_only"
 SELECTED_FEATURES = ["log_return_1d", "log_return_5d", "log_return_20d"]
+VOLATILITY_COLUMN = "volatility_20d"
+VOLATILITY_ADJUSTED_VARIANTS = {
+    "volatility_adjusted_full": {"gross_exposure": 1.00, "max_weight": 0.40},
+    "volatility_adjusted_75": {"gross_exposure": 0.75, "max_weight": 0.30},
+    "volatility_adjusted_50": {"gross_exposure": 0.50, "max_weight": 0.25},
+    "volatility_adjusted_diversified_full": {"gross_exposure": 1.00, "max_weight": 0.20},
+    "volatility_adjusted_diversified_75": {"gross_exposure": 0.75, "max_weight": 0.15},
+    "volatility_adjusted_diversified_50": {"gross_exposure": 0.50, "max_weight": 0.10},
+}
+FEE_BPS = 5.0
 SIGNAL_THRESHOLDS_BY_SYMBOL = {
     "AAPL": 0.45,
     "AMZN": 0.55,
@@ -130,7 +141,7 @@ def strategy_metrics_row(
     }
 
 
-def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, test_data: pd.DataFrame, model: RandomForestClassifier) -> tuple[list[dict[str, float | str]], list[pd.DataFrame]]:
+def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, test_data: pd.DataFrame, model: RandomForestClassifier) -> tuple[list[dict[str, float | str]], list[pd.DataFrame], pd.DataFrame]:
     """Evaluate the selected model strategy for one symbol/fold."""
 
     fitted_model = fit_model(model, train_data)
@@ -199,7 +210,60 @@ def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, tes
         daily_returns["strategy"] = strategy_name
         daily_return_frames.append(daily_returns)
 
-    return metrics_rows, daily_return_frames
+    volatility_input = test_data[["Date", "log_return_1d", VOLATILITY_COLUMN]].copy()
+    volatility_input["symbol"] = symbol
+    volatility_input["fold"] = fold_name
+    volatility_input["signal"] = predicted_labels
+
+    return metrics_rows, daily_return_frames, volatility_input
+
+
+def build_volatility_adjusted_strategy(volatility_inputs: pd.DataFrame) -> tuple[list[dict[str, float | str]], pd.DataFrame]:
+    """Build portfolio-level inverse-volatility weights for active signals."""
+
+    metric_rows = []
+    daily_return_frames = []
+
+    for strategy_name, settings in VOLATILITY_ADJUSTED_VARIANTS.items():
+        inputs = volatility_inputs.copy()
+        inputs["inverse_volatility"] = 1 / inputs[VOLATILITY_COLUMN].replace(0, np.nan)
+        inputs["raw_weight"] = inputs["signal"] * inputs["inverse_volatility"].fillna(0)
+        daily_raw_weight = inputs.groupby("Date")["raw_weight"].transform("sum")
+        inputs["target_weight"] = (inputs["raw_weight"] / daily_raw_weight.replace(0, np.nan)).fillna(0)
+        inputs["target_weight"] = (inputs["target_weight"] * settings["gross_exposure"]).clip(upper=settings["max_weight"])
+
+        inputs = inputs.sort_values(["symbol", "Date"]).reset_index(drop=True)
+        inputs["position_weight"] = inputs.groupby("symbol")["target_weight"].shift(1).fillna(0)
+        inputs["cost"] = inputs.groupby("symbol")["target_weight"].diff().abs().fillna(0) * (FEE_BPS / 10000.0)
+        inputs["net_strategy_return"] = inputs["position_weight"] * inputs["log_return_1d"] - inputs["cost"]
+        inputs["strategy"] = strategy_name
+
+        for symbol, symbol_returns in inputs.groupby("symbol"):
+            metrics = risk_metrics(symbol_returns["net_strategy_return"])
+            metric_rows.append(
+                {
+                    "symbol": symbol,
+                    "fold": "all",
+                    "strategy": strategy_name,
+                    "model": SELECTED_MODEL_NAME,
+                    "feature_set": f"{SELECTED_FEATURE_SET_NAME}_inverse_volatility",
+                    "threshold": SIGNAL_THRESHOLDS_BY_SYMBOL[symbol],
+                    "train_start": pd.NaT,
+                    "train_end": pd.NaT,
+                    "test_start": symbol_returns["Date"].min(),
+                    "test_end": symbol_returns["Date"].max(),
+                    "exposure": symbol_returns["target_weight"].mean(),
+                    "trade_count": symbol_returns["target_weight"].diff().abs().fillna(0).astype(bool).sum(),
+                    "accuracy": pd.NA,
+                    "precision": pd.NA,
+                    "roc_auc": pd.NA,
+                    **metrics,
+                }
+            )
+
+        daily_return_frames.append(inputs[["Date", "symbol", "fold", "strategy", "net_strategy_return"]].copy())
+
+    return metric_rows, pd.concat(daily_return_frames, ignore_index=True)
 
 
 def evaluate_always_long(symbol: str, fold_name: str, test_data: pd.DataFrame) -> tuple[dict[str, float | str], pd.DataFrame]:
@@ -268,7 +332,10 @@ def summarize_portfolio(daily_returns: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for strategy, strategy_returns in daily_returns.groupby("strategy"):
-        portfolio_returns = strategy_returns.groupby("Date")["net_strategy_return"].mean().sort_index()
+        if strategy.startswith("volatility_adjusted"):
+            portfolio_returns = strategy_returns.groupby("Date")["net_strategy_return"].sum().sort_index()
+        else:
+            portfolio_returns = strategy_returns.groupby("Date")["net_strategy_return"].mean().sort_index()
         metrics = risk_metrics(portfolio_returns)
         rows.append(
             {
@@ -347,6 +414,7 @@ Selected setup:
 
 This applies the optimized per-ticker threshold strategy to the full five-stock universe.
 The `long_flat` variant keeps the original all-in/all-out behavior, while `sized_*` variants scale exposure by model confidence.
+The `volatility_adjusted_*` variants weight active signals by inverse 20-day volatility, with diversified versions capped closer to equal-weight portfolio limits.
 """
 
     output_path.write_text(report)
@@ -362,6 +430,7 @@ def main() -> None:
     model_template = build_selected_model()
     metric_rows: list[dict[str, float | str]] = []
     daily_return_frames: list[pd.DataFrame] = []
+    volatility_input_frames: list[pd.DataFrame] = []
 
     for symbol in config.symbols:
         data = load_symbol_data(symbol)
@@ -374,11 +443,16 @@ def main() -> None:
                 print(f"Skipping {symbol} fold {fold_name} because train or test data is empty.")
                 continue
 
-            model_metrics, model_daily_returns = evaluate_strategy(symbol, fold_name, train_data, test_data, model_template)
+            model_metrics, model_daily_returns, volatility_inputs = evaluate_strategy(symbol, fold_name, train_data, test_data, model_template)
             baseline_metrics, baseline_daily_returns = evaluate_always_long(symbol, fold_name, test_data)
 
             metric_rows.extend([*model_metrics, baseline_metrics])
             daily_return_frames.extend([*model_daily_returns, baseline_daily_returns])
+            volatility_input_frames.append(volatility_inputs)
+
+    volatility_metric_rows, volatility_daily_returns = build_volatility_adjusted_strategy(pd.concat(volatility_input_frames, ignore_index=True))
+    metric_rows.extend(volatility_metric_rows)
+    daily_return_frames.append(volatility_daily_returns)
 
     results = pd.DataFrame(metric_rows)
     if results.empty:
