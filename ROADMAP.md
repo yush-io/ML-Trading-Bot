@@ -119,7 +119,7 @@ Useful script:
 - `run_evaluate_aapl.py`
 
 Recommended next steps:
-- Consider a second baseline model, such as Random Forest or XGBoost
+- Compare Logistic Regression, Random Forest, Gradient Boosting, and XGBoost when the local environment supports it
 - Save trained model artifacts only after the modeling approach stabilizes
 - Add chart examples to the README after deciding whether generated report images should be tracked
 
