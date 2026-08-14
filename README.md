@@ -60,3 +60,5 @@ Run `python run_train_aapl.py` to train the first AAPL-only baseline model and s
 Run `python run_report_aapl.py` to generate AAPL equity curve and drawdown plots in `reports/figures/`.
 
 Run `python run_evaluate_aapl.py` to compare signal thresholds and generate signal exposure/confusion matrix plots.
+
+Run `python run_compare_aapl_models.py` to compare Logistic Regression, Random Forest, Gradient Boosting, and XGBoost when the local environment supports it.
