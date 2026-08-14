@@ -38,6 +38,19 @@ def simple_long_flat_backtest(df: pd.DataFrame, signal_col: str = "signal", retu
     return out
 
 
+def position_sized_backtest(df: pd.DataFrame, position_col: str = "position_size", return_col: str = "log_return_1d", fee_bps: float = 5.0) -> pd.DataFrame:
+    """Simulate a long/cash strategy with fractional position sizes."""
+
+    out = df.copy()
+    out["strategy_return"] = out[position_col].shift(1).fillna(0) * out[return_col]
+    out["cost"] = out[position_col].diff().abs().fillna(0) * (fee_bps / 10000.0)
+    out["net_strategy_return"] = out["strategy_return"] - out["cost"]
+    out["equity_curve"] = np.exp(out["net_strategy_return"].cumsum())
+    out["buy_and_hold"] = np.exp(out[return_col].cumsum())
+    out["drawdown"] = out["equity_curve"] / out["equity_curve"].cummax() - 1
+    return out
+
+
 def risk_metrics(returns: pd.Series, periods_per_year: int = 252) -> dict[str, float]:
     """Calculate trading-focused risk and return metrics."""
 

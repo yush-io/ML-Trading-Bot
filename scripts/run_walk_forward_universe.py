@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import RandomForestClassifier
 
-from src.backtest import risk_metrics, simple_long_flat_backtest
+from src.backtest import position_sized_backtest, risk_metrics, simple_long_flat_backtest
 from src.config import ProjectConfig
 from src.train import classification_metrics
 
@@ -20,6 +20,23 @@ SIGNAL_THRESHOLDS_BY_SYMBOL = {
     "META": 0.60,
     "MSFT": 0.40,
     "NVDA": 0.45,
+}
+POSITION_SIZE_BUCKETS = {
+    "sized_balanced": (
+        (0.00, 0.25),
+        (0.05, 0.50),
+        (0.10, 0.75),
+        (0.15, 1.00),
+    ),
+    "sized_aggressive": (
+        (0.00, 0.50),
+        (0.05, 0.75),
+        (0.10, 1.00),
+    ),
+    "sized_near_full": (
+        (0.00, 0.75),
+        (0.05, 1.00),
+    ),
 }
 
 TRAIN_START_DATE = "2018-01-01"
@@ -60,7 +77,60 @@ def fit_model(model: RandomForestClassifier, train_data: pd.DataFrame):
     return fitted_model
 
 
-def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, test_data: pd.DataFrame, model: RandomForestClassifier) -> tuple[dict[str, float | str], pd.DataFrame]:
+def bucketed_position_size(probabilities, threshold: float, buckets: tuple[tuple[float, float], ...]) -> pd.Series:
+    """Convert model confidence into coarse fractional position sizes."""
+
+    confidence_margin = pd.Series(probabilities - threshold)
+    position_size = pd.Series(0.0, index=confidence_margin.index)
+
+    for upper_margin, size in buckets:
+        position_size = position_size.mask(confidence_margin >= upper_margin, size)
+
+    return position_size
+
+
+def linear_position_size(probabilities, threshold: float, floor_size: float = 0.25) -> pd.Series:
+    """Scale position size smoothly from a floor size at threshold to 100%."""
+
+    probability_series = pd.Series(probabilities)
+    confidence_range = max(1 - threshold, 0.01)
+    scaled_confidence = ((probability_series - threshold) / confidence_range).clip(lower=0, upper=1)
+    return (floor_size + (1 - floor_size) * scaled_confidence).where(probability_series >= threshold, 0.0)
+
+
+def strategy_metrics_row(
+    symbol: str,
+    fold_name: str,
+    strategy: str,
+    threshold: float,
+    train_data: pd.DataFrame,
+    test_data: pd.DataFrame,
+    classifier_metrics: dict[str, float],
+    strategy_metrics: dict[str, float],
+    exposure: float,
+    trade_count: float,
+) -> dict[str, float | str]:
+    """Build one consistent metrics row for model strategy variants."""
+
+    return {
+        "symbol": symbol,
+        "fold": fold_name,
+        "strategy": strategy,
+        "model": SELECTED_MODEL_NAME,
+        "feature_set": SELECTED_FEATURE_SET_NAME,
+        "threshold": threshold,
+        "train_start": train_data["Date"].min(),
+        "train_end": train_data["Date"].max(),
+        "test_start": test_data["Date"].min(),
+        "test_end": test_data["Date"].max(),
+        "exposure": exposure,
+        "trade_count": trade_count,
+        **classifier_metrics,
+        **strategy_metrics,
+    }
+
+
+def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, test_data: pd.DataFrame, model: RandomForestClassifier) -> tuple[list[dict[str, float | str]], list[pd.DataFrame]]:
     """Evaluate the selected model strategy for one symbol/fold."""
 
     fitted_model = fit_model(model, train_data)
@@ -72,32 +142,64 @@ def evaluate_strategy(symbol: str, fold_name: str, train_data: pd.DataFrame, tes
     strategy_data["predicted_probability"] = probabilities
     strategy_data["signal"] = predicted_labels
 
-    backtest = simple_long_flat_backtest(strategy_data)
     classifier_metrics = classification_metrics(test_data["target_next_day_up"], predicted_labels, probabilities)
-    strategy_metrics = risk_metrics(backtest["net_strategy_return"])
 
-    metrics = {
-        "symbol": symbol,
-        "fold": fold_name,
-        "strategy": "model",
-        "model": SELECTED_MODEL_NAME,
-        "feature_set": SELECTED_FEATURE_SET_NAME,
-        "threshold": signal_threshold,
-        "train_start": train_data["Date"].min(),
-        "train_end": train_data["Date"].max(),
-        "test_start": test_data["Date"].min(),
-        "test_end": test_data["Date"].max(),
-        "exposure": strategy_data["signal"].mean(),
-        "trade_count": strategy_data["signal"].diff().abs().fillna(0).sum(),
-        **classifier_metrics,
-        **strategy_metrics,
+    metrics_rows = []
+    daily_return_frames = []
+
+    long_flat_backtest = simple_long_flat_backtest(strategy_data)
+    metrics_rows.append(
+        strategy_metrics_row(
+            symbol=symbol,
+            fold_name=fold_name,
+            strategy="long_flat",
+            threshold=signal_threshold,
+            train_data=train_data,
+            test_data=test_data,
+            classifier_metrics=classifier_metrics,
+            strategy_metrics=risk_metrics(long_flat_backtest["net_strategy_return"]),
+            exposure=strategy_data["signal"].mean(),
+            trade_count=strategy_data["signal"].diff().abs().fillna(0).sum(),
+        )
+    )
+    long_flat_daily_returns = long_flat_backtest[["Date", "net_strategy_return"]].copy()
+    long_flat_daily_returns["symbol"] = symbol
+    long_flat_daily_returns["fold"] = fold_name
+    long_flat_daily_returns["strategy"] = "long_flat"
+    daily_return_frames.append(long_flat_daily_returns)
+
+    position_size_variants = {
+        strategy_name: bucketed_position_size(probabilities, signal_threshold, buckets)
+        for strategy_name, buckets in POSITION_SIZE_BUCKETS.items()
     }
+    position_size_variants["sized_linear"] = linear_position_size(probabilities, signal_threshold)
 
-    daily_returns = backtest[["Date", "net_strategy_return"]].copy()
-    daily_returns["symbol"] = symbol
-    daily_returns["fold"] = fold_name
-    daily_returns["strategy"] = "model"
-    return metrics, daily_returns
+    for strategy_name, position_size in position_size_variants.items():
+        sized_data = strategy_data.copy()
+        sized_data["position_size"] = position_size.to_numpy()
+        sized_backtest = position_sized_backtest(sized_data)
+        metrics_rows.append(
+            strategy_metrics_row(
+                symbol=symbol,
+                fold_name=fold_name,
+                strategy=strategy_name,
+                threshold=signal_threshold,
+                train_data=train_data,
+                test_data=test_data,
+                classifier_metrics=classifier_metrics,
+                strategy_metrics=risk_metrics(sized_backtest["net_strategy_return"]),
+                exposure=sized_data["position_size"].mean(),
+                trade_count=sized_data["position_size"].diff().abs().fillna(0).astype(bool).sum(),
+            )
+        )
+
+        daily_returns = sized_backtest[["Date", "net_strategy_return"]].copy()
+        daily_returns["symbol"] = symbol
+        daily_returns["fold"] = fold_name
+        daily_returns["strategy"] = strategy_name
+        daily_return_frames.append(daily_returns)
+
+    return metrics_rows, daily_return_frames
 
 
 def evaluate_always_long(symbol: str, fold_name: str, test_data: pd.DataFrame) -> tuple[dict[str, float | str], pd.DataFrame]:
@@ -184,25 +286,34 @@ def summarize_portfolio(daily_returns: pd.DataFrame) -> pd.DataFrame:
 def write_summary(symbol_summary: pd.DataFrame, portfolio_summary: pd.DataFrame, output_path: Path) -> None:
     """Write a concise markdown summary for the full universe test."""
 
-    model_portfolio = portfolio_summary[portfolio_summary["strategy"] == "model"].iloc[0]
     baseline_portfolio = portfolio_summary[portfolio_summary["strategy"] == "always_long"].iloc[0]
+    model_portfolios = portfolio_summary[portfolio_summary["strategy"] != "always_long"].copy()
+    best_model_portfolio = model_portfolios.sort_values(["sharpe_ratio", "total_return"], ascending=False).iloc[0]
 
-    model_rows = symbol_summary[symbol_summary["strategy"] == "model"].set_index("symbol")
     baseline_rows = symbol_summary[symbol_summary["strategy"] == "always_long"].set_index("symbol")
 
+    portfolio_lines = "\n".join(
+        f"- `{row['strategy']}`: Sharpe `{row['sharpe_ratio']:.4f}`, return `{row['total_return']:.2%}`, "
+        f"drawdown `{row['max_drawdown']:.2%}`."
+        for _, row in portfolio_summary.sort_values(["strategy"]).iterrows()
+    )
+
     symbol_lines = []
-    for symbol in model_rows.index:
-        model = model_rows.loc[symbol]
+    for symbol in baseline_rows.index:
         baseline = baseline_rows.loc[symbol]
+        variants = symbol_summary[(symbol_summary["symbol"] == symbol) & (symbol_summary["strategy"] != "always_long")]
+        variant_text = "; ".join(
+            f"{row['strategy']} Sharpe `{row['avg_sharpe_ratio']:.4f}`, return `{row['avg_total_return']:.2%}`, drawdown `{row['avg_max_drawdown']:.2%}`"
+            for _, row in variants.sort_values("strategy").iterrows()
+        )
         symbol_lines.append(
-            f"- `{symbol}`: model Sharpe `{model['avg_sharpe_ratio']:.4f}` vs hold `{baseline['avg_sharpe_ratio']:.4f}`, "
-            f"return `{model['avg_total_return']:.2%}` vs hold `{baseline['avg_total_return']:.2%}`, "
-            f"drawdown `{model['avg_max_drawdown']:.2%}` vs hold `{baseline['avg_max_drawdown']:.2%}`."
+            f"- `{symbol}`: {variant_text}; always_long Sharpe `{baseline['avg_sharpe_ratio']:.4f}`, "
+            f"return `{baseline['avg_total_return']:.2%}`, drawdown `{baseline['avg_max_drawdown']:.2%}`."
         )
 
     symbol_text = "\n".join(symbol_lines)
-    sharpe_delta = model_portfolio["sharpe_ratio"] - baseline_portfolio["sharpe_ratio"]
-    return_delta = model_portfolio["total_return"] - baseline_portfolio["total_return"]
+    sharpe_delta = best_model_portfolio["sharpe_ratio"] - baseline_portfolio["sharpe_ratio"]
+    return_delta = best_model_portfolio["total_return"] - baseline_portfolio["total_return"]
 
     report = f"""# Universe Walk-Forward Summary
 
@@ -214,14 +325,19 @@ Selected setup:
 
 ## Equal-Weight Portfolio
 
-- Model Sharpe: `{model_portfolio["sharpe_ratio"]:.4f}`
+- Best model variant: `{best_model_portfolio["strategy"]}`
+- Best model Sharpe: `{best_model_portfolio["sharpe_ratio"]:.4f}`
 - Always-long Sharpe: `{baseline_portfolio["sharpe_ratio"]:.4f}`
 - Sharpe difference: `{sharpe_delta:.4f}`
-- Model total return: `{model_portfolio["total_return"]:.2%}`
+- Best model total return: `{best_model_portfolio["total_return"]:.2%}`
 - Always-long total return: `{baseline_portfolio["total_return"]:.2%}`
 - Return difference: `{return_delta:.2%}`
-- Model max drawdown: `{model_portfolio["max_drawdown"]:.2%}`
+- Best model max drawdown: `{best_model_portfolio["max_drawdown"]:.2%}`
 - Always-long max drawdown: `{baseline_portfolio["max_drawdown"]:.2%}`
+
+## Strategy Variants
+
+{portfolio_lines}
 
 ## Per-Symbol Results
 
@@ -230,7 +346,7 @@ Selected setup:
 ## Interpretation
 
 This applies the optimized per-ticker threshold strategy to the full five-stock universe.
-Use the optimization report to compare this benchmark against other model, feature, and threshold choices.
+The `long_flat` variant keeps the original all-in/all-out behavior, while `sized_*` variants scale exposure by model confidence.
 """
 
     output_path.write_text(report)
@@ -261,8 +377,8 @@ def main() -> None:
             model_metrics, model_daily_returns = evaluate_strategy(symbol, fold_name, train_data, test_data, model_template)
             baseline_metrics, baseline_daily_returns = evaluate_always_long(symbol, fold_name, test_data)
 
-            metric_rows.extend([model_metrics, baseline_metrics])
-            daily_return_frames.extend([model_daily_returns, baseline_daily_returns])
+            metric_rows.extend([*model_metrics, baseline_metrics])
+            daily_return_frames.extend([*model_daily_returns, baseline_daily_returns])
 
     results = pd.DataFrame(metric_rows)
     if results.empty:
